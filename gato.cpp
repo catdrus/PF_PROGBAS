@@ -1,53 +1,80 @@
 #include <SFML/Graphics.hpp>
 #include <array>
 #include <string>
+#include <cmath>
 
-// No se necesita <optional> en SFML 2.6
-
+const int WINDOW_SIZE = 600;
 const int CELL_SIZE = 200;
+const float TRANSITION_TIME = 0.5f;
 
-std::array<std::array<char, 3>, 3> board = {0};
+enum class GameState {
+    Menu,
+    Game,
+    TransitionToGame,
+    TransitionToMenu,
+    GameOver
+};
+
+std::array<std::array<char, 3>, 3> board;
 char currentPlayer = 'X';
 bool gameOver = false;
 std::string winnerText = "";
+GameState currentState = GameState::Menu;
+float transitionTimer = 0.f;
+sf::Clock gameClock;
+sf::Clock animationClock;
 
 void resetBoard() {
-    board = {0};
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            board[i][j] = ' ';
+        }
+    }
     currentPlayer = 'X';
     gameOver = false;
     winnerText = "";
 }
 
 bool checkWinner() {
+    // Verificar filas
     for (int i = 0; i < 3; i++) {
-        // Filas
-        if (board[i][0] && board[i][0] == board[i][1] && board[i][1] == board[i][2]) {
+        if (board[i][0] != ' ' && board[i][0] == board[i][1] && board[i][1] == board[i][2]) {
             winnerText = std::string("Gana ") + board[i][0];
             return true;
         }
-        // Columnas
-        if (board[0][i] && board[0][i] == board[1][i] && board[1][i] == board[2][i]) {
+    }
+    
+    // Verificar columnas
+    for (int i = 0; i < 3; i++) {
+        if (board[0][i] != ' ' && board[0][i] == board[1][i] && board[1][i] == board[2][i]) {
             winnerText = std::string("Gana ") + board[0][i];
             return true;
         }
     }
 
-    // Diagonales
-    if (board[0][0] && board[0][0] == board[1][1] && board[1][1] == board[2][2]) {
+    // Verificar diagonal principal
+    if (board[0][0] != ' ' && board[0][0] == board[1][1] && board[1][1] == board[2][2]) {
         winnerText = std::string("Gana ") + board[0][0];
         return true;
     }
-    if (board[0][2] && board[0][2] == board[1][1] && board[1][1] == board[2][0]) {
+    
+    // Verificar diagonal secundaria
+    if (board[0][2] != ' ' && board[0][2] == board[1][1] && board[1][1] == board[2][0]) {
         winnerText = std::string("Gana ") + board[0][2];
         return true;
     }
 
-    // Empate
+    // Verificar empate
     bool full = true;
-    for (auto& row : board)
-        for (auto c : row)
-            if (c == 0)
+    for (const auto& row : board) {
+        for (char c : row) {
+            if (c == ' ') {
                 full = false;
+                break;
+            }
+        }
+        if (!full) break;
+    }
 
     if (full) {
         winnerText = "Empate";
@@ -57,107 +84,158 @@ bool checkWinner() {
     return false;
 }
 
-int main() {
-    // Se usa sf::Vector2u en lugar de {600, 600}
-    sf::RenderWindow window(sf::VideoMode(600, 600), "Juego del Gato (SFML 2.6)");
-
+void drawGame(sf::RenderWindow& window, const sf::Font& font) {
+    // Dibujar líneas de la cuadrícula
+    sf::RectangleShape line(sf::Vector2f(5, WINDOW_SIZE));
+    line.setFillColor(sf::Color::Black);
     
-    sf::Font font;
-    if (!font.loadFromFile("arial.ttf")) {
-        printf("No se pudo cargar arial.ttf\n");
-        return -1;
+    for (int i = 1; i < 3; i++) {
+        line.setSize(sf::Vector2f(5, WINDOW_SIZE));
+        line.setPosition(static_cast<float>(i * CELL_SIZE), 0);
+        window.draw(line);
+
+        line.setSize(sf::Vector2f(WINDOW_SIZE, 5));
+        line.setPosition(0, static_cast<float>(i * CELL_SIZE));
+        window.draw(line);
     }
 
-    // Objeto sf::Event para usar en el bucle de eventos
-    sf::Event event; 
+    // Dibujar X y O
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            if (board[i][j] != ' ') {
+                sf::Text text;
+                text.setFont(font);
+                text.setString(std::string(1, board[i][j]));
+                text.setCharacterSize(100);
+                text.setFillColor(board[i][j] == 'X' ? sf::Color::Red : sf::Color::Blue);
+                
+                sf::FloatRect bounds = text.getLocalBounds();
+                float posX = j * CELL_SIZE + (CELL_SIZE - bounds.width) / 2.f - bounds.left;
+                float posY = i * CELL_SIZE + (CELL_SIZE - bounds.height) / 2.f - bounds.top - 20.f;
+                
+                text.setPosition(posX, posY);
+                window.draw(text);
+            }
+        }
+    }
+
+    // Mensaje de Game Over
+    if (gameOver) {
+        sf::Text msg;
+        msg.setFont(font);
+        msg.setString(winnerText + " - Clic para Menu");
+        msg.setCharacterSize(35);
+        msg.setFillColor(sf::Color::Black);
+        
+        sf::FloatRect bounds = msg.getLocalBounds();
+        msg.setPosition((WINDOW_SIZE - bounds.width) / 2.f, WINDOW_SIZE - 60.f);
+        window.draw(msg);
+    }
+}
+
+void drawMenu(sf::RenderWindow& window, const sf::Font& font) {
+    // Título
+    sf::Text title;
+    title.setFont(font);
+    title.setString("Juego del Gato");
+    title.setCharacterSize(80);
+    title.setFillColor(sf::Color(100, 100, 100));
+    sf::FloatRect titleBounds = title.getLocalBounds();
+    title.setPosition((WINDOW_SIZE - titleBounds.width) / 2.f, 100.f);
+    window.draw(title);
+
+    // Botón JUGAR
+    sf::RectangleShape playButton(sf::Vector2f(300, 100));
+    playButton.setFillColor(sf::Color(50, 200, 50));
+    playButton.setPosition(150.f, 250.f);
+    window.draw(playButton);
+
+    // Texto del botón
+    sf::Text playText;
+    playText.setFont(font);
+    playText.setString("JUGAR");
+    playText.setCharacterSize(50);
+    playText.setFillColor(sf::Color::White);
+    sf::FloatRect textBounds = playText.getLocalBounds();
+    playText.setPosition(
+        150.f + (300.f - textBounds.width) / 2.f,
+        250.f + (100.f - textBounds.height) / 2.f - textBounds.top
+    );
+    window.draw(playText);
+}
+
+int main() {
+    sf::RenderWindow window(sf::VideoMode(WINDOW_SIZE, WINDOW_SIZE), "Juego del Gato (SFML)");
+    window.setFramerateLimit(60);
+    
+    sf::Font font;
+    if (!font.loadFromFile("C:/Windows/Fonts/arial.ttf")) {
+        if (!font.loadFromFile("C:/Windows/Fonts/calibri.ttf") &&
+            !font.loadFromFile("C:/Windows/Fonts/verdana.ttf") &&
+            !font.loadFromFile("arial.ttf")) {
+            printf("No se pudo cargar ninguna fuente.\n");
+            return -1;
+        }
+    }
+
+    resetBoard(); // Inicializar el tablero al inicio
 
     while (window.isOpen()) {
-        // --- BUENA PRÁCTICA: BUCLE DE EVENTOS SFML 2.x ---
+        sf::Event event;
+        
         while (window.pollEvent(event)) { 
-            // Manejar evento de cerrar ventana
             if (event.type == sf::Event::Closed) {
                 window.close();
             }
-
-            // Manejar click del ratón
+            
             if (event.type == sf::Event::MouseButtonPressed) {
-                if (event.mouseButton.button == sf::Mouse::Left && !gameOver) {
-                    // Acceder a la posición con event.mouseButton.x/y
-                    int x = event.mouseButton.x / CELL_SIZE;
-                    int y = event.mouseButton.y / CELL_SIZE;
-                    
-                    if (x < 3 && y < 3 && board[y][x] == 0) {
-                        board[y][x] = currentPlayer;
-                        if (checkWinner()) {
-                            gameOver = true;
-                        } else {
-                            currentPlayer = (currentPlayer == 'X') ? 'O' : 'X';
+                if (event.mouseButton.button == sf::Mouse::Left) {
+                    if (currentState == GameState::Game && !gameOver) {
+                        int x = event.mouseButton.x / CELL_SIZE;
+                        int y = event.mouseButton.y / CELL_SIZE;
+                        
+                        if (x >= 0 && x < 3 && y >= 0 && y < 3 && board[y][x] == ' ') {
+                            board[y][x] = currentPlayer;
+                            if (checkWinner()) {
+                                gameOver = true;
+                                currentState = GameState::GameOver;
+                            } else {
+                                currentPlayer = (currentPlayer == 'X') ? 'O' : 'X';
+                            }
                         }
+                    } else if (currentState == GameState::Menu) {
+                        // Detectar clic en botón JUGAR
+                        if (event.mouseButton.x >= 150 && event.mouseButton.x <= 450 && 
+                            event.mouseButton.y >= 250 && event.mouseButton.y <= 350) {
+                            resetBoard();
+                            currentState = GameState::Game;
+                        }
+                    } else if (currentState == GameState::GameOver) {
+                        // Volver al menú
+                        currentState = GameState::Menu;
                     }
                 }
                 
-                // Click derecho para reiniciar
+                // Clic derecho para volver al menú
                 if (event.mouseButton.button == sf::Mouse::Right) {
-                    resetBoard();
-                }
-            }
-        }
-        // ----------------------------------------------------
-
-        window.clear(sf::Color(240, 240, 240));
-
-        // --- Dibujar la rejilla ---
-        sf::RectangleShape line;
-        line.setFillColor(sf::Color::Black);
-
-        for (int i = 1; i < 3; i++) {
-            // Línea Vertical
-            line.setSize(sf::Vector2f(5, 600)); // Usar sf::Vector2f
-            line.setPosition(static_cast<float>(i * CELL_SIZE), 0);
-            window.draw(line);
-
-            // Línea Horizontal
-            line.setSize(sf::Vector2f(600, 5)); // Usar sf::Vector2f
-            line.setPosition(0, static_cast<float>(i * CELL_SIZE));
-            window.draw(line);
-        }
-
-        // --- Dibujar X y O ---
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                if (board[i][j] != 0) {
-                    // Usar el constructor sf::Text(const sf::String& string, const sf::Font& font, unsigned int characterSize)
-                    sf::Text text(sf::String(board[i][j]), font, 100); 
-                    text.setFillColor(board[i][j] == 'X' ? sf::Color::Red : sf::Color::Blue);
-                    
-                    // En SFML 2.x, el Bounds se obtiene con getGlobalBounds() y el ancho/alto con width/height
-                    sf::FloatRect bounds = text.getLocalBounds(); 
-                    
-                    // Cálculo de la posición similar, aunque la compensación del texto puede variar ligeramente
-                    text.setPosition({
-                        j * CELL_SIZE + (CELL_SIZE - bounds.width) / 2.f - bounds.left, // bounds.left para centrado más exacto
-                        i * CELL_SIZE + (CELL_SIZE - bounds.height) / 2.f - bounds.top - 20.f // bounds.top y el ajuste de -20.f
-                    });
-                    
-                    window.draw(text);
+                    if (currentState == GameState::Game || currentState == GameState::GameOver) {
+                        currentState = GameState::Menu;
+                    }
                 }
             }
         }
 
-        // --- Mensaje de Fin de Juego ---
-        if (gameOver) {
-            sf::Text msg(winnerText, font, 50);
-            msg.setFillColor(sf::Color::Black);
-            
-            sf::FloatRect bounds = msg.getLocalBounds();
-            
-            msg.setPosition({
-                (600 - bounds.width) / 2.f - bounds.left, 
-                600.f - 80.f - bounds.top
-            });
-            window.draw(msg);
-        }
+        // Dibujar
+        window.clear(sf::Color::White);
 
+        if (currentState == GameState::Menu) {
+            drawMenu(window, font);
+        } else if (currentState == GameState::Game || currentState == GameState::GameOver) {
+            drawGame(window, font);
+        }
+        
         window.display();
     }
+    
+    return 0;
 }
