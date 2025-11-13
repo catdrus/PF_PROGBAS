@@ -8,10 +8,10 @@ const int CELL_SIZE = 200;
 const int MARGIN = 50;
 const float TRANSITION_TIME = 0.5f;
 
-enum class GameState {
-    Menu,
-    Game,
-    GameOver
+struct GameState {
+    static const int Menu = 0;
+    static const int Game = 1;
+    static const int GameOver = 2;
 };
 
 struct WinLine {
@@ -24,7 +24,7 @@ std::array<std::array<char, 3>, 3> board;
 char currentPlayer = 'X';
 bool gameOver = false;
 std::string winnerText = "";
-GameState currentState = GameState::Menu;
+int currentState = GameState::Menu;
 WinLine winningLine;
 float lineAnimation = 0.f;
 sf::Clock animationClock;
