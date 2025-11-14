@@ -1,4 +1,5 @@
 #include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
 #include <array>
 #include <string>
 #include <cmath>
@@ -20,6 +21,134 @@ struct WinLine {
     bool exists = false;
 };
 
+// Estructura para gestionar sonidos
+struct AudioManager {
+    sf::SoundBuffer clickBuffer;
+    sf::SoundBuffer moveBuffer;
+    sf::SoundBuffer winBuffer;
+    sf::SoundBuffer drawBuffer;
+    sf::SoundBuffer hoverBuffer;
+    
+    sf::Sound clickSound;
+    sf::Sound moveSound;
+    sf::Sound winSound;
+    sf::Sound drawSound;
+    sf::Sound hoverSound;
+    
+    sf::Music bgMusic;
+    
+    bool loadAudio() {
+        // Intenta cargar los archivos de sonido
+        // Si no existen, el juego seguirá funcionando sin sonido
+        bool allLoaded = true;
+        
+        // Obtener directorio del ejecutable
+        std::string baseDir = "C:/Users/catdr/Downloads/PF_Progbas/sounds/";
+        
+        if (!clickBuffer.loadFromFile(baseDir + "click.wav") &&
+            !clickBuffer.loadFromFile("sounds/click.wav") &&
+            !clickBuffer.loadFromFile("click.wav")) {
+            printf("Advertencia: No se pudo cargar click.wav\n");
+            allLoaded = false;
+        } else {
+            clickSound.setBuffer(clickBuffer);
+            clickSound.setVolume(70);
+        }
+        
+        if (!moveBuffer.loadFromFile(baseDir + "move.wav") &&
+            !moveBuffer.loadFromFile("sounds/move.wav") &&
+            !moveBuffer.loadFromFile("move.wav")) {
+            printf("Advertencia: No se pudo cargar move.wav\n");
+            allLoaded = false;
+        } else {
+            moveSound.setBuffer(moveBuffer);
+            moveSound.setVolume(60);
+        }
+        
+        if (!winBuffer.loadFromFile(baseDir + "win.wav") &&
+            !winBuffer.loadFromFile("sounds/win.wav") &&
+            !winBuffer.loadFromFile("win.wav")) {
+            printf("Advertencia: No se pudo cargar win.wav\n");
+            allLoaded = false;
+        } else {
+            winSound.setBuffer(winBuffer);
+            winSound.setVolume(80);
+        }
+        
+        if (!drawBuffer.loadFromFile(baseDir + "draw.wav") &&
+            !drawBuffer.loadFromFile("sounds/draw.wav") &&
+            !drawBuffer.loadFromFile("draw.wav")) {
+            printf("Advertencia: No se pudo cargar draw.wav\n");
+            allLoaded = false;
+        } else {
+            drawSound.setBuffer(drawBuffer);
+            drawSound.setVolume(70);
+        }
+        
+        if (!hoverBuffer.loadFromFile(baseDir + "hover.wav") &&
+            !hoverBuffer.loadFromFile("sounds/hover.wav") &&
+            !hoverBuffer.loadFromFile("hover.wav")) {
+            printf("Advertencia: No se pudo cargar hover.wav\n");
+            allLoaded = false;
+        } else {
+            hoverSound.setBuffer(hoverBuffer);
+            hoverSound.setVolume(40);
+        }
+        
+        // Música de fondo (opcional)
+        if (!bgMusic.openFromFile(baseDir + "background.ogg") &&
+            !bgMusic.openFromFile("sounds/background.ogg") &&
+            !bgMusic.openFromFile("background.ogg")) {
+            printf("Advertencia: No se pudo cargar background.ogg\n");
+        } else {
+            bgMusic.setLoop(true);
+            bgMusic.setVolume(30);
+        }
+        
+        return allLoaded;
+    }
+    
+    void playClick() {
+        if (clickBuffer.getDuration().asSeconds() > 0) {
+            clickSound.play();
+        }
+    }
+    
+    void playMove() {
+        if (moveBuffer.getDuration().asSeconds() > 0) {
+            moveSound.play();
+        }
+    }
+    
+    void playWin() {
+        if (winBuffer.getDuration().asSeconds() > 0) {
+            winSound.play();
+        }
+    }
+    
+    void playDraw() {
+        if (drawBuffer.getDuration().asSeconds() > 0) {
+            drawSound.play();
+        }
+    }
+    
+    void playHover() {
+        if (hoverBuffer.getDuration().asSeconds() > 0 && hoverSound.getStatus() != sf::Sound::Playing) {
+            hoverSound.play();
+        }
+    }
+    
+    void playMusic() {
+        if (bgMusic.getDuration().asSeconds() > 0) {
+            bgMusic.play();
+        }
+    }
+    
+    void stopMusic() {
+        bgMusic.stop();
+    }
+};
+
 std::array<std::array<char, 3>, 3> board;
 char currentPlayer = 'X';
 bool gameOver = false;
@@ -28,6 +157,8 @@ int currentState = GameState::Menu;
 WinLine winningLine;
 float lineAnimation = 0.f;
 sf::Clock animationClock;
+AudioManager audio;
+bool wasHovering = false;
 
 void resetBoard() {
     for (int i = 0; i < 3; i++) {
@@ -294,6 +425,12 @@ void drawMenu(sf::RenderWindow& window, const sf::Font& font) {
     bool isHovering = (mousePos.x >= 200 && mousePos.x <= 500 && 
                        mousePos.y >= 320 && mousePos.y <= 420);
 
+    // Reproducir sonido de hover
+    if (isHovering && !wasHovering) {
+        audio.playHover();
+    }
+    wasHovering = isHovering;
+
     // Sombra del botón
     sf::RectangleShape buttonShadow(sf::Vector2f(300, 100));
     buttonShadow.setFillColor(sf::Color(0, 0, 0, 60));
@@ -345,6 +482,15 @@ int main() {
         }
     }
 
+    // Cargar audio
+    bool audioLoaded = audio.loadAudio();
+    if (audioLoaded) {
+        printf("Audio cargado correctamente.\n");
+        audio.playMusic();
+    } else {
+        printf("El juego funcionara sin sonido.\n");
+    }
+
     resetBoard();
 
     while (window.isOpen()) {
@@ -363,10 +509,19 @@ int main() {
                         
                         if (x >= 0 && x < 3 && y >= 0 && y < 3 && board[y][x] == ' ') {
                             board[y][x] = currentPlayer;
+                            audio.playMove(); // Sonido de movimiento
+                            
                             if (checkWinner()) {
                                 gameOver = true;
                                 currentState = GameState::GameOver;
                                 animationClock.restart();
+                                
+                                // Reproducir sonido según el resultado
+                                if (winnerText == "Empate!") {
+                                    audio.playDraw();
+                                } else {
+                                    audio.playWin();
+                                }
                             } else {
                                 currentPlayer = (currentPlayer == 'X') ? 'O' : 'X';
                             }
@@ -374,16 +529,19 @@ int main() {
                     } else if (currentState == GameState::Menu) {
                         if (event.mouseButton.x >= 200 && event.mouseButton.x <= 500 && 
                             event.mouseButton.y >= 320 && event.mouseButton.y <= 420) {
+                            audio.playClick(); // Sonido de clic
                             resetBoard();
                             currentState = GameState::Game;
                         }
                     } else if (currentState == GameState::GameOver) {
+                        audio.playClick();
                         currentState = GameState::Menu;
                     }
                 }
                 
                 if (event.mouseButton.button == sf::Mouse::Right) {
                     if (currentState == GameState::Game || currentState == GameState::GameOver) {
+                        audio.playClick();
                         currentState = GameState::Menu;
                     }
                 }
