@@ -6,5 +6,5 @@ Proyecto final de Programación Básica - Juego del Gato (Tic Tac Toe) con SFML 
 - Mejoras de rendimiento y compatibilidad
 
 ## Requisitos
-- SFML 3.x.x
+- SFML 3.X.X
 - C++17 o superior
