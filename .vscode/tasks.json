@@ -9,9 +9,10 @@
         "-fdiagnostics-color=always",
         "-std=c++20",
         "-g",
-        "${file}",
+        "${fileDirname}\\gato.cpp",
+        "${fileDirname}\\IA.cpp",
         "-o",
-        "${fileDirname}\\${fileBasenameNoExtension}.exe",
+        "${fileDirname}\\gato.exe",
         "-IC:\\msys64\\ucrt64\\include",
         "-LC:\\msys64\\ucrt64\\lib",
         "-lsfml-graphics",
@@ -29,7 +30,7 @@
         "kind": "build",
         "isDefault": true
       },
-      "detail": "Compilador con SFML 3 desde MSYS2"
+      "detail": "Compilador con SFML 3 desde MSYS2 + IA"
     }
   ]
 }

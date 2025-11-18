@@ -5,6 +5,8 @@
 #include <string>
 #include <cmath>
 #include <cstdint>
+#include <ctime>
+#include "IA.hpp"
 
 const int WINDOW_SIZE = 700;
 const int CELL_SIZE = 200;
@@ -16,6 +18,8 @@ struct GameState {
     static const int Game = 1;
     static const int GameOver = 2;
     static const int Settings = 3;
+    static const int ModeSelect = 4;
+    static const int DifficultySelect = 5;
 };
 
 struct WinLine {
@@ -129,6 +133,12 @@ sf::Clock animationClock;
 AudioManager audio;
 bool wasHovering = false;
 
+// Variables para modo de juego
+bool vsIA = false;
+Difficulty cpuDifficulty = Difficulty::Medium;
+sf::Clock cpuMoveClock;
+bool waitingForCPU = false;
+
 void resetBoard() {
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 3; j++) {
@@ -140,6 +150,7 @@ void resetBoard() {
     winnerText = "";
     winningLine.exists = false;
     lineAnimation = 0.f;
+    waitingForCPU = false;
 }
 
 bool checkWinner() {
@@ -272,7 +283,11 @@ void drawGame(sf::RenderWindow& window, const sf::Font& font) {
 
     if (!gameOver) {
         sf::Text turnText(font);
-        turnText.setString(std::string("Turno: ") + currentPlayer);
+        if (waitingForCPU) {
+            turnText.setString("Turno: IA pensando...");
+        } else {
+            turnText.setString(std::string("Turno: ") + currentPlayer);
+        }
         turnText.setCharacterSize(40);
         turnText.setStyle(sf::Text::Bold);
         turnText.setFillColor(currentPlayer == 'X' ? sf::Color(255, 80, 80) : sf::Color(80, 150, 255));
@@ -418,6 +433,242 @@ void drawMenu(sf::RenderWindow& window, const sf::Font& font) {
     sf::FloatRect instBounds = instructions.getLocalBounds();
     instructions.setPosition({(WINDOW_SIZE - instBounds.size.x) / 2.f, 550.f});
     window.draw(instructions);
+}
+
+void drawModeSelect(sf::RenderWindow& window, const sf::Font& font) {
+    for (int i = 0; i < WINDOW_SIZE; i++) {
+        sf::RectangleShape line(sf::Vector2f(WINDOW_SIZE, 1));
+        line.setPosition({0.f, static_cast<float>(i)});
+        float ratio = static_cast<float>(i) / WINDOW_SIZE;
+        std::uint8_t color = 230 - static_cast<std::uint8_t>(ratio * 50);
+        line.setFillColor(sf::Color(color, color, color + 10));
+        window.draw(line);
+    }
+
+    sf::Text title(font);
+    title.setString("SELECCIONA MODO");
+    title.setCharacterSize(60);
+    title.setStyle(sf::Text::Bold);
+    title.setFillColor(sf::Color(60, 60, 80));
+    sf::FloatRect titleBounds = title.getLocalBounds();
+    title.setPosition({(WINDOW_SIZE - titleBounds.size.x) / 2.f, 80.f});
+    window.draw(title);
+
+    sf::Vector2i mousePos = sf::Mouse::getPosition(window);
+    
+    // Botón 1 vs 1
+    bool isHovering1v1 = (mousePos.x >= 200 && mousePos.x <= 500 && 
+                          mousePos.y >= 220 && mousePos.y <= 300);
+    sf::RectangleShape button1v1Shadow(sf::Vector2f(300, 80));
+    button1v1Shadow.setFillColor(sf::Color(0, 0, 0, 60));
+    button1v1Shadow.setPosition({205.f, 225.f});
+    window.draw(button1v1Shadow);
+    sf::RectangleShape button1v1(sf::Vector2f(300, 80));
+    button1v1.setFillColor(isHovering1v1 ? sf::Color(70, 220, 70) : sf::Color(50, 200, 50));
+    button1v1.setPosition({200.f, 220.f});
+    button1v1.setOutlineThickness(4);
+    button1v1.setOutlineColor(sf::Color(30, 150, 30));
+    window.draw(button1v1);
+
+    sf::Text text1v1(font);
+    text1v1.setString("1 vs 1");
+    text1v1.setCharacterSize(50);
+    text1v1.setStyle(sf::Text::Bold);
+    text1v1.setFillColor(sf::Color::White);
+    sf::FloatRect textBounds = text1v1.getLocalBounds();
+    text1v1.setPosition({
+        200.f + (300.f - textBounds.size.x) / 2.f - textBounds.position.x,
+        220.f + (80.f - textBounds.size.y) / 2.f - textBounds.position.y
+    });
+    window.draw(text1v1);
+
+    // Botón vs IA
+    bool isHoveringIA = (mousePos.x >= 200 && mousePos.x <= 500 && 
+                         mousePos.y >= 330 && mousePos.y <= 410);
+    sf::RectangleShape buttonIAShadow(sf::Vector2f(300, 80));
+    buttonIAShadow.setFillColor(sf::Color(0, 0, 0, 60));
+    buttonIAShadow.setPosition({205.f, 335.f});
+    window.draw(buttonIAShadow);
+    sf::RectangleShape buttonIA(sf::Vector2f(300, 80));
+    buttonIA.setFillColor(isHoveringIA ? sf::Color(220, 150, 70) : sf::Color(200, 130, 50));
+    buttonIA.setPosition({200.f, 330.f});
+    buttonIA.setOutlineThickness(4);
+    buttonIA.setOutlineColor(sf::Color(150, 90, 30));
+    window.draw(buttonIA);
+
+    sf::Text textIA(font);
+    textIA.setString("vs IA");
+    textIA.setCharacterSize(50);
+    textIA.setStyle(sf::Text::Bold);
+    textIA.setFillColor(sf::Color::White);
+    textBounds = textIA.getLocalBounds();
+    textIA.setPosition({
+        200.f + (300.f - textBounds.size.x) / 2.f - textBounds.position.x,
+        330.f + (80.f - textBounds.size.y) / 2.f - textBounds.position.y
+    });
+    window.draw(textIA);
+
+    // Botón Volver
+    bool isHoveringBack = (mousePos.x >= 250 && mousePos.x <= 450 && 
+                           mousePos.y >= 480 && mousePos.y <= 550);
+    sf::RectangleShape backShadow(sf::Vector2f(200, 70));
+    backShadow.setFillColor(sf::Color(0, 0, 0, 60));
+    backShadow.setPosition({255.f, 485.f});
+    window.draw(backShadow);
+    sf::RectangleShape backButton(sf::Vector2f(200, 70));
+    backButton.setFillColor(isHoveringBack ? sf::Color(100, 150, 220) : sf::Color(80, 130, 200));
+    backButton.setPosition({250.f, 480.f});
+    backButton.setOutlineThickness(3);
+    backButton.setOutlineColor(sf::Color(50, 90, 150));
+    window.draw(backButton);
+
+    sf::Text backText(font);
+    backText.setString("VOLVER");
+    backText.setCharacterSize(40);
+    backText.setStyle(sf::Text::Bold);
+    backText.setFillColor(sf::Color::White);
+    sf::FloatRect backBounds = backText.getLocalBounds();
+    backText.setPosition({
+        250.f + (200.f - backBounds.size.x) / 2.f - backBounds.position.x,
+        480.f + (70.f - backBounds.size.y) / 2.f - backBounds.position.y
+    });
+    window.draw(backText);
+
+    if ((isHovering1v1 || isHoveringIA || isHoveringBack) && !wasHovering) {
+        audio.playHover();
+    }
+    wasHovering = isHovering1v1 || isHoveringIA || isHoveringBack;
+}
+
+void drawDifficultySelect(sf::RenderWindow& window, const sf::Font& font) {
+    for (int i = 0; i < WINDOW_SIZE; i++) {
+        sf::RectangleShape line(sf::Vector2f(WINDOW_SIZE, 1));
+        line.setPosition({0.f, static_cast<float>(i)});
+        float ratio = static_cast<float>(i) / WINDOW_SIZE;
+        std::uint8_t color = 230 - static_cast<std::uint8_t>(ratio * 50);
+        line.setFillColor(sf::Color(color, color, color + 10));
+        window.draw(line);
+    }
+
+    sf::Text title(font);
+    title.setString("DIFICULTAD");
+    title.setCharacterSize(60);
+    title.setStyle(sf::Text::Bold);
+    title.setFillColor(sf::Color(60, 60, 80));
+    sf::FloatRect titleBounds = title.getLocalBounds();
+    title.setPosition({(WINDOW_SIZE - titleBounds.size.x) / 2.f, 80.f});
+    window.draw(title);
+
+    sf::Vector2i mousePos = sf::Mouse::getPosition(window);
+
+    // Botón Fácil
+    bool isHoveringEasy = (mousePos.x >= 200 && mousePos.x <= 500 && 
+                           mousePos.y >= 200 && mousePos.y <= 270);
+    sf::RectangleShape easyButtonShadow(sf::Vector2f(300, 70));
+    easyButtonShadow.setFillColor(sf::Color(0, 0, 0, 60));
+    easyButtonShadow.setPosition({205.f, 205.f});
+    window.draw(easyButtonShadow);
+    sf::RectangleShape easyButton(sf::Vector2f(300, 70));
+    easyButton.setFillColor(isHoveringEasy ? sf::Color(120, 220, 120) : sf::Color(100, 200, 100));
+    easyButton.setPosition({200.f, 200.f});
+    easyButton.setOutlineThickness(3);
+    easyButton.setOutlineColor(sf::Color(60, 160, 60));
+    window.draw(easyButton);
+
+    sf::Text easyText(font);
+    easyText.setString("FACIL");
+    easyText.setCharacterSize(45);
+    easyText.setStyle(sf::Text::Bold);
+    easyText.setFillColor(sf::Color::White);
+    sf::FloatRect textBounds = easyText.getLocalBounds();
+    easyText.setPosition({
+        200.f + (300.f - textBounds.size.x) / 2.f - textBounds.position.x,
+        200.f + (70.f - textBounds.size.y) / 2.f - textBounds.position.y
+    });
+    window.draw(easyText);
+
+    // Botón Medio
+    bool isHoveringMedium = (mousePos.x >= 200 && mousePos.x <= 500 && 
+                             mousePos.y >= 290 && mousePos.y <= 360);
+    sf::RectangleShape mediumButtonShadow(sf::Vector2f(300, 70));
+    mediumButtonShadow.setFillColor(sf::Color(0, 0, 0, 60));
+    mediumButtonShadow.setPosition({205.f, 295.f});
+    window.draw(mediumButtonShadow);
+    sf::RectangleShape mediumButton(sf::Vector2f(300, 70));
+    mediumButton.setFillColor(isHoveringMedium ? sf::Color(240, 200, 80) : sf::Color(220, 180, 60));
+    mediumButton.setPosition({200.f, 290.f});
+    mediumButton.setOutlineThickness(3);
+    mediumButton.setOutlineColor(sf::Color(180, 140, 40));
+    window.draw(mediumButton);
+
+    sf::Text mediumText(font);
+    mediumText.setString("MEDIO");
+    mediumText.setCharacterSize(45);
+    mediumText.setStyle(sf::Text::Bold);
+    mediumText.setFillColor(sf::Color::White);
+    textBounds = mediumText.getLocalBounds();
+    mediumText.setPosition({
+        200.f + (300.f - textBounds.size.x) / 2.f - textBounds.position.x,
+        290.f + (70.f - textBounds.size.y) / 2.f - textBounds.position.y
+    });
+    window.draw(mediumText);
+
+    // Botón Difícil
+    bool isHoveringHard = (mousePos.x >= 200 && mousePos.x <= 500 && 
+                           mousePos.y >= 380 && mousePos.y <= 450);
+    sf::RectangleShape hardButtonShadow(sf::Vector2f(300, 70));
+    hardButtonShadow.setFillColor(sf::Color(0, 0, 0, 60));
+    hardButtonShadow.setPosition({205.f, 385.f});
+    window.draw(hardButtonShadow);
+    sf::RectangleShape hardButton(sf::Vector2f(300, 70));
+    hardButton.setFillColor(isHoveringHard ? sf::Color(240, 90, 90) : sf::Color(220, 70, 70));
+    hardButton.setPosition({200.f, 380.f});
+    hardButton.setOutlineThickness(3);
+    hardButton.setOutlineColor(sf::Color(180, 40, 40));
+    window.draw(hardButton);
+
+    sf::Text hardText(font);
+    hardText.setString("DIFICIL");
+    hardText.setCharacterSize(45);
+    hardText.setStyle(sf::Text::Bold);
+    hardText.setFillColor(sf::Color::White);
+    textBounds = hardText.getLocalBounds();
+    hardText.setPosition({
+        200.f + (300.f - textBounds.size.x) / 2.f - textBounds.position.x,
+        380.f + (70.f - textBounds.size.y) / 2.f - textBounds.position.y
+    });
+    window.draw(hardText);
+
+    // Botón Volver
+    bool isHoveringBack = (mousePos.x >= 250 && mousePos.x <= 450 && 
+                           mousePos.y >= 500 && mousePos.y <= 570);
+    sf::RectangleShape backShadow(sf::Vector2f(200, 70));
+    backShadow.setFillColor(sf::Color(0, 0, 0, 60));
+    backShadow.setPosition({255.f, 505.f});
+    window.draw(backShadow);
+    sf::RectangleShape backButton(sf::Vector2f(200, 70));
+    backButton.setFillColor(isHoveringBack ? sf::Color(100, 150, 220) : sf::Color(80, 130, 200));
+    backButton.setPosition({250.f, 500.f});
+    backButton.setOutlineThickness(3);
+    backButton.setOutlineColor(sf::Color(50, 90, 150));
+    window.draw(backButton);
+
+    sf::Text backText(font);
+    backText.setString("VOLVER");
+    backText.setCharacterSize(40);
+    backText.setStyle(sf::Text::Bold);
+    backText.setFillColor(sf::Color::White);
+    sf::FloatRect backBounds = backText.getLocalBounds();
+    backText.setPosition({
+        250.f + (200.f - backBounds.size.x) / 2.f - backBounds.position.x,
+        500.f + (70.f - backBounds.size.y) / 2.f - backBounds.position.y
+    });
+    window.draw(backText);
+
+    if ((isHoveringEasy || isHoveringMedium || isHoveringHard || isHoveringBack) && !wasHovering) {
+        audio.playHover();
+    }
+    wasHovering = isHoveringEasy || isHoveringMedium || isHoveringHard || isHoveringBack;
 }
 
 void drawSettings(sf::RenderWindow& window, const sf::Font& font) {
@@ -577,6 +828,8 @@ void drawSettings(sf::RenderWindow& window, const sf::Font& font) {
 }
 
 int main() {
+    srand(static_cast<unsigned>(time(0)));
+    
     sf::RenderWindow window(sf::VideoMode({WINDOW_SIZE, WINDOW_SIZE}), "Juego del Gato");
     window.setFramerateLimit(60);
     
@@ -605,9 +858,34 @@ int main() {
 
     while (window.isOpen()) {
         
+        // Lógica de movimiento de CPU
+        if (currentState == GameState::Game && !gameOver && vsIA && currentPlayer == 'O' && !waitingForCPU) {
+            waitingForCPU = true;
+            cpuMoveClock.restart();
+        }
+
+        if (waitingForCPU && cpuMoveClock.getElapsedTime().asSeconds() > 0.5f) {
+            cpuMakeMove(cpuDifficulty);
+            audio.playMove();
+            
+            if (checkWinner()) {
+                gameOver = true;
+                currentState = GameState::GameOver;
+                animationClock.restart();
+                if (winnerText == "Empate!") {
+                    audio.playDraw();
+                } else {
+                    audio.playWin();
+                }
+            } else {
+                currentPlayer = 'X';
+            }
+            
+            waitingForCPU = false;
+        }
+        
         while (std::optional<sf::Event> event = window.pollEvent()) { 
             
-            // Verificar si es evento de cierre
             if (event->is<sf::Event::Closed>()) {
                 window.close();
             }
@@ -618,45 +896,95 @@ int main() {
                     int mx = mousePressed->position.x;
                     int my = mousePressed->position.y;
                     
-                    if (currentState == GameState::Game && !gameOver) {
-                        int x = (mx - MARGIN) / CELL_SIZE;
-                        int y = (my - MARGIN) / CELL_SIZE;
-                        
-                        if (x >= 0 && x < 3 && y >= 0 && y < 3 && board[y][x] == ' ') {
-                            board[y][x] = currentPlayer;
-                            audio.playMove();
+                    if (currentState == GameState::Game && !gameOver && !waitingForCPU) {
+                        // Solo permitir movimiento si es el turno del jugador
+                        if (!vsIA || currentPlayer == 'X') {
+                            int x = (mx - MARGIN) / CELL_SIZE;
+                            int y = (my - MARGIN) / CELL_SIZE;
                             
-                            if (checkWinner()) {
-                                gameOver = true;
-                                currentState = GameState::GameOver;
-                                animationClock.restart();
-                                if (winnerText == "Empate!") {
-                                    audio.playDraw();
+                            if (x >= 0 && x < 3 && y >= 0 && y < 3 && board[y][x] == ' ') {
+                                board[y][x] = currentPlayer;
+                                audio.playMove();
+                                
+                                if (checkWinner()) {
+                                    gameOver = true;
+                                    currentState = GameState::GameOver;
+                                    animationClock.restart();
+                                    if (winnerText == "Empate!") {
+                                        audio.playDraw();
+                                    } else {
+                                        audio.playWin();
+                                    }
                                 } else {
-                                    audio.playWin();
+                                    currentPlayer = (currentPlayer == 'X') ? 'O' : 'X';
                                 }
-                            } else {
-                                currentPlayer = (currentPlayer == 'X') ? 'O' : 'X';
                             }
                         }
                     } else if (currentState == GameState::Menu) {
                         if (mx >= 200 && mx <= 500 && my >= 280 && my <= 360) {
-                            audio.playClick(); resetBoard(); currentState = GameState::Game;
+                            audio.playClick(); 
+                            currentState = GameState::ModeSelect;
                         }
                         else if (mx >= 200 && mx <= 500 && my >= 380 && my <= 460) {
-                            audio.playClick(); currentState = GameState::Settings;
+                            audio.playClick(); 
+                            currentState = GameState::Settings;
+                        }
+                    } else if (currentState == GameState::ModeSelect) {
+                        if (mx >= 200 && mx <= 500 && my >= 220 && my <= 300) {
+                            audio.playClick();
+                            vsIA = false;
+                            resetBoard();
+                            currentState = GameState::Game;
+                        }
+                        else if (mx >= 200 && mx <= 500 && my >= 330 && my <= 410) {
+                            audio.playClick();
+                            currentState = GameState::DifficultySelect;
+                        }
+                        else if (mx >= 250 && mx <= 450 && my >= 480 && my <= 550) {
+                            audio.playClick();
+                            currentState = GameState::Menu;
+                        }
+                    } else if (currentState == GameState::DifficultySelect) {
+                        if (mx >= 200 && mx <= 500 && my >= 200 && my <= 270) {
+                            audio.playClick();
+                            cpuDifficulty = Difficulty::Easy;
+                            vsIA = true;
+                            resetBoard();
+                            currentState = GameState::Game;
+                        }
+                        else if (mx >= 200 && mx <= 500 && my >= 290 && my <= 360) {
+                            audio.playClick();
+                            cpuDifficulty = Difficulty::Medium;
+                            vsIA = true;
+                            resetBoard();
+                            currentState = GameState::Game;
+                        }
+                        else if (mx >= 200 && mx <= 500 && my >= 380 && my <= 450) {
+                            audio.playClick();
+                            cpuDifficulty = Difficulty::Hard;
+                            vsIA = true;
+                            resetBoard();
+                            currentState = GameState::Game;
+                        }
+                        else if (mx >= 250 && mx <= 450 && my >= 500 && my <= 570) {
+                            audio.playClick();
+                            currentState = GameState::ModeSelect;
                         }
                     } else if (currentState == GameState::GameOver) {
-                        audio.playClick(); currentState = GameState::Menu;
+                        audio.playClick(); 
+                        currentState = GameState::Menu;
                     } else if (currentState == GameState::Settings) {
                         if (mx >= 250 && mx <= 450 && my >= 450 && my <= 520) {
-                            audio.playClick(); currentState = GameState::Menu;
+                            audio.playClick(); 
+                            currentState = GameState::Menu;
                         }
                         else if (mx >= 500 && mx <= 600 && my >= 190 && my <= 230) {
-                            audio.playClick(); audio.toggleMusicMute();
+                            audio.playClick(); 
+                            audio.toggleMusicMute();
                         }
                         else if (mx >= 500 && mx <= 600 && my >= 320 && my <= 360) {
-                            audio.playClick(); audio.toggleSfxMute();
+                            audio.playClick(); 
+                            audio.toggleSfxMute();
                         }
                         else if (mx >= 100 && mx <= 400 && my >= 200 && my <= 220) {
                             isDraggingMusic = true;
@@ -668,7 +996,9 @@ int main() {
                 }
                 
                 if (mousePressed->button == sf::Mouse::Button::Right) {
-                    if (currentState == GameState::Game || currentState == GameState::GameOver || currentState == GameState::Settings) {
+                    if (currentState == GameState::Game || currentState == GameState::GameOver || 
+                        currentState == GameState::Settings || currentState == GameState::ModeSelect ||
+                        currentState == GameState::DifficultySelect) {
                         audio.playClick();
                         currentState = GameState::Menu;
                     }
@@ -706,6 +1036,10 @@ int main() {
 
         if (currentState == GameState::Menu) {
             drawMenu(window, font);
+        } else if (currentState == GameState::ModeSelect) {
+            drawModeSelect(window, font);
+        } else if (currentState == GameState::DifficultySelect) {
+            drawDifficultySelect(window, font);
         } else if (currentState == GameState::Game || currentState == GameState::GameOver) {
             drawGame(window, font);
         } else if (currentState == GameState::Settings) {
